@@ -2,6 +2,24 @@
  * THE SHIFTING MAZE - Game Logic Header
  * 
  * Contains main game class that manages all game components
+ * 
+ * NEW FEATURES:
+ * - Multiple levels with increasing difficulty
+ * - Collectible items (coins, keys, power-ups)
+ * - Door/key mechanics
+ * - Particle effects
+ * - Menu system
+ * - Improved enemy AI (patrol, chase, guard)
+ * 
+ * Computer Graphics Algorithms:
+ * - 3D Transformations
+ * - Bézier curves/surfaces
+ * - Parametric surfaces
+ * - Back-face culling
+ * - Z-buffer
+ * - Lambert/Gouraud shading
+ * - Orthographic projection (HUD/Menu)
+ * - Perspective projection (3D view)
  ******************************************************************************/
 
 #ifndef GAME_H
@@ -18,6 +36,11 @@
 #include "hud.h"
 #include "input.h"
 #include "draw.h"
+#include "level.h"
+#include "items.h"
+#include "particles.h"
+#include "door.h"
+#include "menu.h"
 
 #include <ctime>
 #include <cstdio>
@@ -35,6 +58,13 @@ public:
     InputManager input;
     ParametricSurface floorSurface;
     
+    // New systems
+    LevelManager levelManager;
+    ItemManager items;
+    ParticleSystem particles;
+    DoorManager doors;
+    MenuSystem menu;
+    
     // Lighting
     Light mainLight;
     Light playerLight;
@@ -44,6 +74,8 @@ public:
     Material floorMaterial;
     Material exitMaterial;
     Material enemyMaterial;
+    Material itemMaterial;
+    Material doorMaterial;
     
     // Game state
     GameState state;
@@ -51,10 +83,28 @@ public:
     // Timing
     float lastTime;
     float deltaTime;
+    float totalPlayTime;
     
     // Window
     int windowWidth;
     int windowHeight;
+    
+    // Player stats
+    int score;
+    int lives;
+    float speedBoostTime;
+    float invincibilityTime;
+    bool isInvincible;
+    float speedMultiplier;
+    
+    // Effects
+    float screenShakeTime;
+    float screenShakeIntensity;
+    
+    // Fog settings
+    bool fogEnabled;
+    float fogDensity;
+    Color fogColor;
     
     Game() {
         windowWidth = Config::WINDOW_WIDTH;
@@ -62,6 +112,21 @@ public:
         state = STATE_PLAYING;
         lastTime = 0;
         deltaTime = 0;
+        totalPlayTime = 0;
+        
+        score = 0;
+        lives = 3;
+        speedBoostTime = 0;
+        invincibilityTime = 0;
+        isInvincible = false;
+        speedMultiplier = 1.0f;
+        
+        screenShakeTime = 0;
+        screenShakeIntensity = 0;
+        
+        fogEnabled = true;
+        fogDensity = 0.02f;
+        fogColor = Color(0.05f, 0.05f, 0.1f);
     }
     
     // ========================================================================
@@ -72,12 +137,49 @@ public:
         
         initMaterials();
         initLights();
+        
+        // Show main menu first
+        menu.setScreenSize(windowWidth, windowHeight);
+        menu.showMainMenu();
+        state = STATE_PAUSED;
+    }
+    
+    void startGame() {
+        levelManager.reset();
+        score = 0;
+        lives = 3;
+        loadCurrentLevel();
+        menu.hide();
+        state = STATE_PLAYING;
+    }
+    
+    void loadCurrentLevel() {
+        LevelData& level = levelManager.getCurrentLevel();
+        
+        // Update maze size
+        // Note: Would need to make Maze::SIZE non-const for true dynamic sizing
+        // For now, we use the fixed size but adjust other parameters
+        
         initMaze();
         initFloor();
         initCamera();
+        initItems();
+        initDoors();
         initHUD();
         
-        state = STATE_PLAYING;
+        // Apply level theme
+        applyLevelTheme(level);
+        
+        // Reset particles
+        particles.clear();
+        
+        // Reset power-ups
+        speedBoostTime = 0;
+        invincibilityTime = 0;
+        isInvincible = false;
+        speedMultiplier = 1.0f;
+        
+        totalPlayTime = 0;
     }
     
     void initMaterials() {
@@ -104,6 +206,33 @@ public:
         enemyMaterial.diffuse = Color(0.8f, 0.1f, 0.1f);
         enemyMaterial.specular = Color(0.5f, 0.3f, 0.3f);
         enemyMaterial.shininess = 30.0f;
+        
+        // Item material
+        itemMaterial.ambient = Color(0.4f, 0.4f, 0.0f);
+        itemMaterial.diffuse = Color(1.0f, 0.9f, 0.2f);
+        itemMaterial.specular = Color(1.0f, 1.0f, 0.8f);
+        itemMaterial.shininess = 60.0f;
+        
+        // Door material
+        doorMaterial.ambient = Color(0.3f, 0.2f, 0.1f);
+        doorMaterial.diffuse = Color(0.5f, 0.35f, 0.2f);
+        doorMaterial.specular = Color(0.2f, 0.15f, 0.1f);
+        doorMaterial.shininess = 15.0f;
+    }
+    
+    void applyLevelTheme(const LevelData& level) {
+        wallMaterial.diffuse = level.wallColor;
+        wallMaterial.ambient = Color(level.wallColor.r * 0.5f, 
+                                     level.wallColor.g * 0.5f, 
+                                     level.wallColor.b * 0.5f);
+        
+        floorMaterial.diffuse = level.floorColor;
+        floorMaterial.ambient = Color(level.floorColor.r * 0.5f,
+                                      level.floorColor.g * 0.5f,
+                                      level.floorColor.b * 0.5f);
+        
+        fogColor = level.fogColor;
+        fogDensity = level.fogDensity;
     }
     
     void initLights() {
@@ -123,21 +252,42 @@ public:
     }
     
     void initMaze() {
+        LevelData& level = levelManager.getCurrentLevel();
+        
+        maze.shiftInterval = level.shiftInterval;
         maze.generate();
         
-        // Setup enemies
+        // Setup enemies based on level
         enemies.clear();
         
-        Vec4 pos1 = maze.gridToWorld(3, 3);
-        Vec4 pos2 = maze.gridToWorld(5, 3);
-        enemies.addEnemy(pos1, pos2);
+        // Add patrol enemies
+        for (int i = 0; i < level.numEnemies; i++) {
+            int x1 = 2 + rand() % (Maze::SIZE - 4);
+            int z1 = 2 + rand() % (Maze::SIZE - 4);
+            int x2 = 2 + rand() % (Maze::SIZE - 4);
+            int z2 = 2 + rand() % (Maze::SIZE - 4);
+            
+            Vec4 pos1 = maze.gridToWorld(x1, z1);
+            Vec4 pos2 = maze.gridToWorld(x2, z2);
+            enemies.addEnemy(pos1, pos2);
+        }
         
-        Vec4 pos3 = maze.gridToWorld(7, 7);
-        Vec4 pos4 = maze.gridToWorld(7, 5);
-        enemies.addEnemy(pos3, pos4);
+        // Add chase enemies
+        for (int i = 0; i < level.numChaseEnemies; i++) {
+            int x = 3 + rand() % (Maze::SIZE - 6);
+            int z = 3 + rand() % (Maze::SIZE - 6);
+            Vec4 pos = maze.gridToWorld(x, z);
+            enemies.addChaseEnemy(pos);
+        }
         
-        Vec4 center = maze.gridToWorld(5, 5);
-        enemies.addCircularEnemy(center, 1.5f);
+        // Add a circular patrol enemy
+        if (level.numEnemies > 0) {
+            Vec4 center = maze.gridToWorld(Maze::SIZE / 2, Maze::SIZE / 2);
+            enemies.addCircularEnemy(center, 1.5f);
+        }
+        
+        // Set enemy speed based on level
+        enemies.setSpeedMultiplier(level.enemySpeed);
     }
     
     void initFloor() {
@@ -162,20 +312,106 @@ public:
     }
     
     void initHUD() {
+        LevelData& level = levelManager.getCurrentLevel();
+        
         hud.setScreenSize(windowWidth, windowHeight);
-        hud.gameTime = Config::GAME_TIME;
+        hud.gameTime = level.gameTime;
         hud.reset();
+    }
+    
+    void initItems() {
+        LevelData& level = levelManager.getCurrentLevel();
+        
+        items.clear();
+        items.keysRequired = level.numKeys;
+        
+        // Add coins at random empty positions
+        for (int i = 0; i < level.numCoins; i++) {
+            int attempts = 0;
+            while (attempts < 50) {
+                int x = 1 + rand() % (Maze::SIZE - 2);
+                int z = 1 + rand() % (Maze::SIZE - 2);
+                
+                if (maze.getCell(x, z) == CELL_EMPTY) {
+                    Vec4 pos = maze.gridToWorld(x, z);
+                    items.addCoin(pos.x, pos.z);
+                    break;
+                }
+                attempts++;
+            }
+        }
+        
+        // Add keys
+        for (int i = 0; i < level.numKeys; i++) {
+            int attempts = 0;
+            while (attempts < 50) {
+                int x = 2 + rand() % (Maze::SIZE - 4);
+                int z = 2 + rand() % (Maze::SIZE - 4);
+                
+                if (maze.getCell(x, z) == CELL_EMPTY) {
+                    Vec4 pos = maze.gridToWorld(x, z);
+                    items.addKey(pos.x, pos.z);
+                    break;
+                }
+                attempts++;
+            }
+        }
+        
+        // Add power-ups (1-2 per level)
+        int numPowerUps = 1 + rand() % 2;
+        for (int i = 0; i < numPowerUps; i++) {
+            int attempts = 0;
+            while (attempts < 50) {
+                int x = 2 + rand() % (Maze::SIZE - 4);
+                int z = 2 + rand() % (Maze::SIZE - 4);
+                
+                if (maze.getCell(x, z) == CELL_EMPTY) {
+                    Vec4 pos = maze.gridToWorld(x, z);
+                    ItemType powerUpType = (rand() % 3 == 0) ? ITEM_SPEED_BOOST : 
+                                          (rand() % 2 == 0) ? ITEM_INVINCIBILITY : ITEM_TIME_BONUS;
+                    items.addPowerUp(powerUpType, pos.x, pos.z);
+                    break;
+                }
+                attempts++;
+            }
+        }
+    }
+    
+    void initDoors() {
+        LevelData& level = levelManager.getCurrentLevel();
+        
+        doors.clear();
+        
+        // Add doors if keys are required
+        if (level.numKeys > 0) {
+            // Place a door near the exit
+            int doorX = maze.exitX - 1;
+            int doorZ = maze.exitZ;
+            
+            if (doorX >= 0 && maze.getCell(doorX, doorZ) == CELL_EMPTY) {
+                Vec4 pos = maze.gridToWorld(doorX, doorZ);
+                doors.addDoor(pos.x, pos.z, doorX, doorZ, true, -1);
+            }
+        }
     }
     
     // ========================================================================
     // GAME RESTART
     // ========================================================================
     void restart() {
-        initMaze();
-        initCamera();
-        hud.reset();
-        enemies.reset();
+        loadCurrentLevel();
         state = STATE_PLAYING;
+    }
+    
+    void nextLevel() {
+        if (levelManager.nextLevel()) {
+            loadCurrentLevel();
+            state = STATE_PLAYING;
+        } else {
+            // All levels complete - show final win
+            menu.showWin(score, hud.remainingTime, levelManager.currentLevel + 1, true);
+            state = STATE_PAUSED;
+        }
     }
     
     // ========================================================================
@@ -185,17 +421,27 @@ public:
         deltaTime = currentTime - lastTime;
         lastTime = currentTime;
         
+        // Update menu animation
+        if (menu.isActive()) {
+            menu.update(deltaTime);
+            return;
+        }
+        
         if (state != STATE_PLAYING) return;
+        
+        totalPlayTime += deltaTime;
         
         // Update HUD timer
         hud.update(deltaTime);
         
         // Check time up
         if (hud.isTimeUp()) {
-            state = STATE_LOSE;
-            hud.setLose("Time's up!");
+            onGameOver("Time's up!");
             return;
         }
+        
+        // Update power-ups
+        updatePowerUps();
         
         // Handle player movement
         updatePlayer();
@@ -203,20 +449,42 @@ public:
         // Update maze
         maze.update(deltaTime);
         
-        // Update enemies
-        enemies.update(deltaTime);
+        // Update enemies with player position for AI
+        enemies.update(deltaTime, camera.position);
+        
+        // Update items
+        items.update(deltaTime);
+        
+        // Update doors
+        doors.update(deltaTime);
+        
+        // Update particles
+        particles.update(deltaTime);
+        
+        // Update screen shake
+        if (screenShakeTime > 0) {
+            screenShakeTime -= deltaTime;
+        }
+        
+        // Check item collection
+        checkItemCollection();
         
         // Check enemy collision
-        if (enemies.checkPlayerCollision(camera.position, Config::PLAYER_RADIUS)) {
-            state = STATE_LOSE;
-            hud.setLose("Caught by enemy!");
+        if (!isInvincible && enemies.checkPlayerCollision(camera.position, Config::PLAYER_RADIUS)) {
+            onPlayerHit();
             return;
         }
         
         // Check exit
         if (maze.checkExit(camera.position)) {
-            state = STATE_WIN;
-            hud.setWin();
+            // Check if all keys collected
+            if (items.hasAllKeys()) {
+                onLevelComplete();
+            } else {
+                // Need more keys - visual feedback
+                screenShakeTime = 0.2f;
+                screenShakeIntensity = 0.1f;
+            }
         }
         
         // Update player light position
@@ -224,8 +492,112 @@ public:
         playerLight.position.y += 0.5f;
     }
     
+    void updatePowerUps() {
+        // Speed boost
+        if (speedBoostTime > 0) {
+            speedBoostTime -= deltaTime;
+            if (speedBoostTime <= 0) {
+                speedMultiplier = 1.0f;
+                camera.moveSpeed = Config::PLAYER_SPEED;
+            }
+        }
+        
+        // Invincibility
+        if (invincibilityTime > 0) {
+            invincibilityTime -= deltaTime;
+            if (invincibilityTime <= 0) {
+                isInvincible = false;
+            }
+        }
+    }
+    
+    void checkItemCollection() {
+        for (auto& item : items.items) {
+            if (item.checkCollision(camera.position, Config::PLAYER_RADIUS)) {
+                item.collect();
+                
+                // Spawn particle effect
+                switch (item.type) {
+                    case ITEM_COIN:
+                        particles.effectCoinCollect(item.position);
+                        score += (int)item.value;
+                        break;
+                    case ITEM_KEY:
+                        particles.effectKeyCollect(item.position);
+                        items.keysCollected++;
+                        // Try to unlock nearby doors
+                        doors.tryUnlockNearby(camera.position, items.keysCollected);
+                        break;
+                    case ITEM_SPEED_BOOST:
+                        particles.effectPowerUp(item.position, item.primaryColor);
+                        speedBoostTime = item.duration;
+                        speedMultiplier = item.value;
+                        camera.moveSpeed = Config::PLAYER_SPEED * speedMultiplier;
+                        break;
+                    case ITEM_INVINCIBILITY:
+                        particles.effectPowerUp(item.position, item.primaryColor);
+                        invincibilityTime = item.duration;
+                        isInvincible = true;
+                        break;
+                    case ITEM_TIME_BONUS:
+                        particles.effectPowerUp(item.position, item.primaryColor);
+                        hud.remainingTime += item.value;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+    
+    void onPlayerHit() {
+        lives--;
+        particles.effectPlayerHit(camera.position);
+        screenShakeTime = 0.3f;
+        screenShakeIntensity = 0.2f;
+        
+        if (lives <= 0) {
+            onGameOver("Caught by enemy!");
+        } else {
+            // Respawn at start with temporary invincibility
+            Vec4 startPos = maze.getStartPosition();
+            camera.setPosition(startPos.x, startPos.y, startPos.z);
+            camera.updateLookAt();
+            invincibilityTime = 2.0f;
+            isInvincible = true;
+        }
+    }
+    
+    void onGameOver(const std::string& reason) {
+        state = STATE_LOSE;
+        hud.setLose(reason);
+        menu.showGameOver(score, hud.remainingTime);
+    }
+    
+    void onLevelComplete() {
+        // Calculate score bonus
+        int levelScore = levelManager.calculateLevelScore(
+            hud.remainingTime, 
+            items.coinsCollected, 
+            levelManager.getCurrentLevel().numCoins
+        );
+        score += levelScore;
+        levelManager.addScore(levelScore);
+        
+        particles.effectWin(camera.position);
+        
+        state = STATE_WIN;
+        hud.setWin();
+        
+        bool isFinal = levelManager.isLastLevel();
+        menu.showWin(score, hud.remainingTime, levelManager.currentLevel + 1, isFinal);
+    }
+    
     void updatePlayer() {
         Vec4 oldPos = camera.position;
+        
+        float moveSpeed = camera.moveSpeed * items.getSpeedMultiplier();
+        camera.moveSpeed = moveSpeed;
         
         if (input.isMovingForward()) {
             camera.moveForward(deltaTime);
@@ -240,10 +612,29 @@ public:
             camera.moveRight(deltaTime);
         }
         
-        // Collision detection
+        // Collision detection with maze
         if (maze.checkCollision(camera.position, Config::PLAYER_RADIUS)) {
             camera.position = oldPos;
             camera.updateLookAt();
+        }
+        
+        // Collision with doors
+        if (doors.checkCollision(camera.position, Config::PLAYER_RADIUS)) {
+            camera.position = oldPos;
+            camera.updateLookAt();
+        }
+        
+        // Speed boost trail effect
+        if (speedBoostTime > 0 && (input.isMovingForward() || input.isMovingBackward() ||
+            input.isMovingLeft() || input.isMovingRight())) {
+            particles.spawnTrail(camera.position, Color(0.0f, 0.8f, 1.0f));
+        }
+        
+        // Invincibility aura effect
+        if (isInvincible && rand() % 5 == 0) {
+            Vec4 auraPos = camera.position;
+            auraPos.y -= 0.5f;
+            particles.spawnTrail(auraPos, Color(1.0f, 0.5f, 0.0f));
         }
         
         // Handle mouse look
@@ -262,16 +653,54 @@ public:
     void render() {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         
+        // Render menu if active
+        if (menu.isActive()) {
+            // Draw faded game scene behind menu
+            setupProjection();
+            setupCamera();
+            setupLights();
+            setupFog();
+            
+            drawFloor();
+            drawMaze();
+            drawEnemies();
+            
+            // Draw menu overlay
+            menu.render();
+            glutSwapBuffers();
+            return;
+        }
+        
         setupProjection();
         setupCamera();
         setupLights();
+        setupFog();
         
         drawFloor();
         drawMaze();
+        drawItems();
+        drawDoors();
         drawEnemies();
+        
+        // Draw particles (after 3D scene, before HUD)
+        particles.render();
+        
         drawHUD();
         
         glutSwapBuffers();
+    }
+    
+    void setupFog() {
+        if (fogEnabled) {
+            glEnable(GL_FOG);
+            glFogi(GL_FOG_MODE, GL_EXP2);
+            GLfloat fogCol[] = {fogColor.r, fogColor.g, fogColor.b, 1.0f};
+            glFogfv(GL_FOG_COLOR, fogCol);
+            glFogf(GL_FOG_DENSITY, fogDensity);
+            glHint(GL_FOG_HINT, GL_NICEST);
+        } else {
+            glDisable(GL_FOG);
+        }
     }
     
     void setupProjection() {
@@ -284,9 +713,21 @@ public:
     void setupCamera() {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
+        
+        // Apply screen shake if active
+        Vec4 shakeOffset(0, 0, 0);
+        if (screenShakeTime > 0) {
+            shakeOffset.x = (float)(rand() % 100 - 50) / 500.0f * screenShakeIntensity;
+            shakeOffset.y = (float)(rand() % 100 - 50) / 500.0f * screenShakeIntensity;
+        }
+        
         gluLookAt(
-            camera.position.x, camera.position.y, camera.position.z,
-            camera.lookAt.x, camera.lookAt.y, camera.lookAt.z,
+            camera.position.x + shakeOffset.x, 
+            camera.position.y + shakeOffset.y, 
+            camera.position.z,
+            camera.lookAt.x + shakeOffset.x, 
+            camera.lookAt.y + shakeOffset.y, 
+            camera.lookAt.z,
             camera.up.x, camera.up.y, camera.up.z
         );
     }
@@ -415,12 +856,106 @@ public:
     // DRAW ENEMIES
     // ========================================================================
     void drawEnemies() {
-        glColor3f(enemyMaterial.diffuse.r, enemyMaterial.diffuse.g, enemyMaterial.diffuse.b);
-        
         for (const auto& enemy : enemies.enemies) {
             if (!enemy.isAlive) continue;
+            
+            // Different colors for different enemy types
+            Color col = enemy.color;
+            if (enemy.isChasing) {
+                // Brighter when chasing
+                col.r = fmin(1.0f, col.r * 1.5f);
+                col.g = fmin(1.0f, col.g * 1.5f);
+            }
+            
+            glColor3f(col.r, col.g, col.b);
+            
+            float scale = enemy.getPulseScale();
             drawSphereAt(enemy.position.x, enemy.position.y, enemy.position.z,
-                         enemy.radius, enemy.slices, enemy.stacks);
+                         enemy.radius * scale, enemy.slices, enemy.stacks);
+        }
+    }
+    
+    // ========================================================================
+    // DRAW ITEMS
+    // ========================================================================
+    void drawItems() {
+        for (const auto& item : items.items) {
+            if (!item.isActive || item.isCollected) continue;
+            
+            float pulse = item.getPulseIntensity();
+            Color col = item.primaryColor;
+            glColor3f(col.r * pulse, col.g * pulse, col.b * pulse);
+            
+            glPushMatrix();
+            glTranslatef(item.position.x, item.position.y, item.position.z);
+            glRotatef(item.rotationY, 0, 1, 0);
+            
+            float scale = item.scale * (1.0f + 0.1f * sin(item.pulsePhase));
+            glScalef(scale, scale, scale);
+            
+            // Different shapes for different items
+            switch (item.type) {
+                case ITEM_COIN:
+                    // Flat cylinder (coin shape)
+                    drawCylinder(0.2f, 0.05f, 16);
+                    break;
+                case ITEM_KEY:
+                    // Simple key shape (cylinder + small box)
+                    drawCylinder(0.05f, 0.3f, 8);
+                    glTranslatef(0, 0.2f, 0);
+                    drawCube(0, 0, 0, 0.15f, 0.1f, 0.05f);
+                    break;
+                case ITEM_SPEED_BOOST:
+                case ITEM_INVINCIBILITY:
+                case ITEM_TIME_BONUS:
+                    // Star/orb shape
+                    drawSphere(0.15f, 12, 6);
+                    break;
+                default:
+                    drawSphere(0.15f, 8, 4);
+                    break;
+            }
+            
+            glPopMatrix();
+        }
+    }
+    
+    // ========================================================================
+    // DRAW DOORS
+    // ========================================================================
+    void drawDoors() {
+        for (const auto& door : doors.doors) {
+            // Door frame
+            glColor3f(doorMaterial.diffuse.r, doorMaterial.diffuse.g, doorMaterial.diffuse.b);
+            
+            float frameWidth = 0.15f;
+            float height = door.height;
+            float width = door.width;
+            
+            // Left frame
+            drawCube(door.position.x - width/2, height/2, door.position.z,
+                     frameWidth, height, frameWidth);
+            // Right frame
+            drawCube(door.position.x + width/2, height/2, door.position.z,
+                     frameWidth, height, frameWidth);
+            // Top frame
+            drawCube(door.position.x, height, door.position.z,
+                     width + frameWidth, frameWidth, frameWidth);
+            
+            // Door panel (with animation)
+            Color doorCol = door.getCurrentColor();
+            glColor3f(doorCol.r, doorCol.g, doorCol.b);
+            
+            glPushMatrix();
+            
+            // Apply door transform (rotation around hinge)
+            glTranslatef(door.position.x - width/2 + 0.1f, height/2, door.position.z);
+            glRotatef(door.openAngle, 0, 1, 0);
+            glTranslatef(width/2 - 0.1f, 0, 0);
+            
+            drawCube(0, 0, 0, width - 0.2f, height - 0.2f, door.thickness);
+            
+            glPopMatrix();
         }
     }
     
@@ -440,12 +975,55 @@ public:
         
         glDisable(GL_DEPTH_TEST);
         glDisable(GL_LIGHTING);
+        glDisable(GL_FOG);
         
         // Timer
         Color timerCol = hud.getTimerColor();
         glColor3f(timerCol.r, timerCol.g, timerCol.b);
         std::string timeStr = "Time: " + hud.getTimeString();
         drawText(windowWidth - 150, windowHeight - 30, timeStr.c_str());
+        
+        // Level info
+        glColor3f(0.8f, 0.8f, 0.8f);
+        char levelStr[64];
+        sprintf(levelStr, "Level %d: %s", 
+                levelManager.currentLevel + 1,
+                levelManager.getCurrentLevel().levelName.c_str());
+        drawText(10, windowHeight - 30, levelStr);
+        
+        // Score
+        char scoreStr[32];
+        sprintf(scoreStr, "Score: %d", score);
+        drawText(10, windowHeight - 55, scoreStr);
+        
+        // Lives
+        glColor3f(1.0f, 0.3f, 0.3f);
+        char livesStr[32];
+        sprintf(livesStr, "Lives: %d", lives);
+        drawText(10, windowHeight - 80, livesStr);
+        
+        // Keys collected
+        if (items.keysRequired > 0) {
+            glColor3f(0.8f, 0.8f, 1.0f);
+            char keysStr[32];
+            sprintf(keysStr, "Keys: %d/%d", items.keysCollected, items.keysRequired);
+            drawText(10, windowHeight - 105, keysStr);
+        }
+        
+        // Power-up indicators
+        if (speedBoostTime > 0) {
+            glColor3f(0.0f, 0.8f, 1.0f);
+            char boostStr[32];
+            sprintf(boostStr, "SPEED BOOST: %.1f", speedBoostTime);
+            drawText(windowWidth/2 - 80, windowHeight - 60, boostStr);
+        }
+        
+        if (isInvincible && invincibilityTime > 0) {
+            glColor3f(1.0f, 0.5f, 0.0f);
+            char invStr[32];
+            sprintf(invStr, "INVINCIBLE: %.1f", invincibilityTime);
+            drawText(windowWidth/2 - 70, windowHeight - 85, invStr);
+        }
         
         // Mini-map
         if (hud.showMiniMap) {
@@ -460,12 +1038,13 @@ public:
         }
         
         // Controls hint
-        glColor3f(0.7f, 0.7f, 0.7f);
-        drawText(10, 20, "WASD: Move | Mouse: Look | M: Map | R: Restart | ESC: Quit",
+        glColor3f(0.5f, 0.5f, 0.5f);
+        drawText(10, 20, "WASD: Move | Mouse: Look | M: Map | E: Interact | P: Pause | R: Restart | ESC: Menu",
                  GLUT_BITMAP_HELVETICA_12);
         
         glEnable(GL_LIGHTING);
         glEnable(GL_DEPTH_TEST);
+        if (fogEnabled) glEnable(GL_FOG);
         
         glMatrixMode(GL_PROJECTION);
         glPopMatrix();
@@ -502,22 +1081,66 @@ public:
             }
         }
         
+        // Items on minimap
+        glColor3f(1.0f, 0.85f, 0.0f);  // Gold for coins
+        for (const auto& item : items.items) {
+            if (item.isCollected || !item.isActive) continue;
+            int ix, iz;
+            maze.worldToGrid(item.position, ix, iz);
+            float ipx = mapStartX + ix * mapScale + mapScale / 2;
+            float ipy = mapStartY + (Maze::SIZE - 1 - iz) * mapScale + mapScale / 2;
+            
+            if (item.type == ITEM_KEY) {
+                glColor3f(0.7f, 0.7f, 1.0f);  // Silver for keys
+            } else if (item.type == ITEM_COIN) {
+                glColor3f(1.0f, 0.85f, 0.0f);  // Gold for coins
+            } else {
+                glColor3f(0.0f, 1.0f, 1.0f);  // Cyan for power-ups
+            }
+            drawCircle2D(ipx, ipy, 2);
+        }
+        
+        // Doors on minimap
+        glColor3f(0.5f, 0.35f, 0.25f);
+        for (const auto& door : doors.doors) {
+            if (door.state == DOOR_OPEN) continue;
+            float dpx = mapStartX + door.gridX * mapScale + mapScale / 2;
+            float dpy = mapStartY + (Maze::SIZE - 1 - door.gridZ) * mapScale + mapScale / 2;
+            
+            if (door.state == DOOR_LOCKED) {
+                glColor3f(0.8f, 0.2f, 0.2f);
+            } else {
+                glColor3f(0.2f, 0.8f, 0.3f);
+            }
+            drawQuad2D(dpx - 2, dpy - 2, 4, 4);
+        }
+        
         // Player
         int playerGridX, playerGridZ;
         maze.worldToGrid(camera.position, playerGridX, playerGridZ);
         float px = mapStartX + playerGridX * mapScale + mapScale / 2;
         float py = mapStartY + (Maze::SIZE - 1 - playerGridZ) * mapScale + mapScale / 2;
         
-        glColor3f(0.0f, 1.0f, 0.0f);
+        if (isInvincible) {
+            glColor3f(1.0f, 0.5f, 0.0f);  // Orange when invincible
+        } else {
+            glColor3f(0.0f, 1.0f, 0.0f);  // Green normally
+        }
         drawCircle2D(px, py, 4);
         
         // Enemies
-        glColor3f(1.0f, 0.0f, 0.0f);
         for (const auto& enemy : enemies.enemies) {
+            if (!enemy.isAlive) continue;
             int ex, ez;
             maze.worldToGrid(enemy.position, ex, ez);
             float epx = mapStartX + ex * mapScale + mapScale / 2;
             float epy = mapStartY + (Maze::SIZE - 1 - ez) * mapScale + mapScale / 2;
+            
+            if (enemy.isChasing) {
+                glColor3f(1.0f, 0.5f, 0.0f);  // Orange when chasing
+            } else {
+                glColor3f(1.0f, 0.0f, 0.0f);  // Red normally
+            }
             drawCircle2D(epx, epy, 3);
         }
     }
@@ -526,16 +1149,98 @@ public:
     // INPUT HANDLERS
     // ========================================================================
     void handleKeyDown(unsigned char key) {
+        // Menu navigation
+        if (menu.isActive()) {
+            if (key == 13) {  // Enter
+                handleMenuSelect(menu.select());
+            } else if (key == 27) {  // ESC
+                if (menu.currentMenu == MENU_PAUSE) {
+                    menu.hide();
+                    state = STATE_PLAYING;
+                } else if (menu.currentMenu != MENU_MAIN) {
+                    menu.showMainMenu();
+                }
+            }
+            return;
+        }
+        
         input.keyDown(key);
         
-        if (key == 27) {  // ESC
-            exit(0);
+        if (key == 27) {  // ESC - Show pause menu
+            menu.showPauseMenu();
+            state = STATE_PAUSED;
         }
+        
         if (key == 'r' || key == 'R') {
             restart();
         }
+        
         if (key == 'm' || key == 'M') {
             hud.showMiniMap = !hud.showMiniMap;
+        }
+        
+        if (key == 'p' || key == 'P') {
+            if (state == STATE_PLAYING) {
+                menu.showPauseMenu();
+                state = STATE_PAUSED;
+            }
+        }
+        
+        if (key == 'e' || key == 'E') {
+            // Interact with doors
+            doors.tryOpenNearby(camera.position);
+        }
+    }
+    
+    void handleSpecialKeyDown(int key) {
+        // Menu navigation with arrow keys
+        if (menu.isActive()) {
+            if (key == GLUT_KEY_UP) {
+                menu.navigateUp();
+            } else if (key == GLUT_KEY_DOWN) {
+                menu.navigateDown();
+            }
+        }
+    }
+    
+    void handleMenuSelect(int action) {
+        switch (action) {
+            case ACTION_START_GAME:
+                startGame();
+                break;
+            case ACTION_CONTINUE:
+            case ACTION_RESUME:
+                menu.hide();
+                state = STATE_PLAYING;
+                break;
+            case ACTION_RESTART:
+                restart();
+                menu.hide();
+                break;
+            case ACTION_NEXT_LEVEL:
+                nextLevel();
+                menu.hide();
+                break;
+            case ACTION_LEVEL_SELECT:
+                menu.showLevelSelect(levelManager.highestUnlocked);
+                break;
+            case ACTION_MAIN_MENU:
+                menu.showMainMenu();
+                state = STATE_PAUSED;
+                break;
+            case ACTION_QUIT:
+                exit(0);
+                break;
+            case ACTION_SELECT_LEVEL_1:
+            case ACTION_SELECT_LEVEL_2:
+            case ACTION_SELECT_LEVEL_3:
+            case ACTION_SELECT_LEVEL_4:
+            case ACTION_SELECT_LEVEL_5:
+                levelManager.selectLevel(action - ACTION_SELECT_LEVEL_1);
+                loadCurrentLevel();
+                menu.hide();
+                state = STATE_PLAYING;
+                break;
         }
     }
     
@@ -544,7 +1249,7 @@ public:
     }
     
     void handleMouseMove(int x, int y) {
-        if (state == STATE_PLAYING) {
+        if (state == STATE_PLAYING && !menu.isActive()) {
             input.mouseMove(x, y);
         }
     }
@@ -554,6 +1259,7 @@ public:
         windowHeight = h;
         glViewport(0, 0, w, h);
         hud.setScreenSize(w, h);
+        menu.setScreenSize(w, h);
         input.setWindowCenter(w / 2, h / 2);
     }
     
@@ -565,10 +1271,22 @@ public:
         printf("  W/A/S/D - Move\n");
         printf("  Mouse   - Look around\n");
         printf("  M       - Toggle mini-map\n");
-        printf("  R       - Restart game\n");
-        printf("  ESC     - Quit\n");
+        printf("  E       - Interact (open doors)\n");
+        printf("  P       - Pause\n");
+        printf("  R       - Restart level\n");
+        printf("  ESC     - Menu\n");
+        printf("==============================================\n");
+        printf("NEW FEATURES:\n");
+        printf("  - 5 Levels with increasing difficulty\n");
+        printf("  - Collectible coins and keys\n");
+        printf("  - Power-ups (speed, invincibility, time)\n");
+        printf("  - Doors that need keys\n");
+        printf("  - Smarter enemies (patrol, chase, guard)\n");
+        printf("  - Particle effects\n");
+        printf("  - Fog and visual themes per level\n");
         printf("==============================================\n");
         printf("Objective: Find the exit before time runs out!\n");
+        printf("Collect keys to unlock doors!\n");
         printf("Watch out for enemies and shifting walls!\n");
         printf("==============================================\n");
     }

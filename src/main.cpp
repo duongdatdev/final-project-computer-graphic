@@ -80,11 +80,15 @@ void keyboardUp(unsigned char key, int x, int y) {
     game.handleKeyUp(key);
 }
 
+void specialKey(int key, int x, int y) {
+    game.handleSpecialKeyDown(key);
+}
+
 void mouseMotion(int x, int y) {
     game.handleMouseMove(x, y);
     
     // Warp mouse back to center
-    if (game.state == STATE_PLAYING) {
+    if (game.state == STATE_PLAYING && !game.menu.isActive()) {
         game.input.mouseWarped = true;
         glutWarpPointer(game.input.windowCenterX, game.input.windowCenterY);
     }
@@ -159,6 +163,7 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutKeyboardUpFunc(keyboardUp);
+    glutSpecialFunc(specialKey);
     glutPassiveMotionFunc(mouseMotion);
     glutMouseFunc(mouseButton);
     
