@@ -1,0 +1,22 @@
+# Build files
+*.exe
+*.o
+*.obj
+
+# Build directories
+build/
+bin/
+Debug/
+Release/
+
+# IDE files
+.vscode/
+.vs/
+*.sln
+*.vcxproj*
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile.cmake
