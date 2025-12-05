@@ -34,7 +34,6 @@ namespace Config {
     const int MAZE_SIZE = 10;
     const float CELL_SIZE = 2.0f;
     const float WALL_HEIGHT = 2.0f;
-    const float SHIFT_INTERVAL = 30.0f;  // Maze shifts every 30 seconds
     
     // ============================================================================
     // GAME SETTINGS
@@ -49,29 +48,6 @@ namespace Config {
     const float NEAR_PLANE = 0.1f;
     const float FAR_PLANE = 100.0f;
     const float FOV = 60.0f;
-    
-    // Floor surface parameters
-    const float FLOOR_AMPLITUDE = 0.15f;
-    const float FLOOR_FREQ_X = 0.3f;
-    const float FLOOR_FREQ_Y = 0.3f;
-    const int FLOOR_RESOLUTION = 40;
-    
-    // ============================================================================
-    // ENEMY SETTINGS
-    // ============================================================================
-    const float ENEMY_RADIUS = 0.4f;
-    const float ENEMY_SPEED = 0.15f;
-    const int ENEMY_SLICES = 16;
-    const int ENEMY_STACKS = 8;
-    const int NUM_ENEMIES = 3;
-    
-    // ============================================================================
-    // DYNAMIC WALL SETTINGS
-    // ============================================================================
-    const int NUM_DYNAMIC_WALLS = 5;
-    const float WALL_ROTATION_SPEED = 45.0f;  // degrees per second
-    const float WALL_SLIDE_SPEED = 0.3f;
-    const float WALL_SCALE_SPEED = 1.0f;
     
     // ============================================================================
     // HUD SETTINGS

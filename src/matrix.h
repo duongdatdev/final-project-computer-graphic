@@ -55,26 +55,6 @@ struct Vec4 {
             x /= len; y /= len; z /= len;
         }
     }
-    
-    Vec4 normalized() const {
-        Vec4 result = *this;
-        result.normalize();
-        return result;
-    }
-    
-    // Dot product (scalar product) - used for back-face culling and lighting
-    float dot(const Vec4& v) const {
-        return x * v.x + y * v.y + z * v.z;
-    }
-    
-    // Cross product - used for normal calculation
-    Vec4 cross(const Vec4& v) const {
-        return Vec4(
-            y * v.z - z * v.y,
-            z * v.x - x * v.z,
-            x * v.y - y * v.x
-        );
-    }
 };
 
 // ============================================================================
@@ -145,10 +125,10 @@ inline Matrix4x4 createRotationYMatrix(float angle) {
 
 // ============================================================================
 // ROTATION MATRIX AROUND Z AXIS - Quay quanh trục Z
-// | cos(a) sin(a)  0  0 |
-// |-sin(a) cos(a)  0  0 |
-// |   0      0     1  0 |
-// |   0      0     0  1 |
+// | cos(a)  sin(a) 0  0 |
+// | -sin(a) cos(a) 0  0 |
+// |   0       0    1  0 |
+// |   0       0    0  1 |
 // ============================================================================
 inline Matrix4x4 createRotationZMatrix(float angle) {
     Matrix4x4 mat;
@@ -157,6 +137,39 @@ inline Matrix4x4 createRotationZMatrix(float angle) {
     float s = sin(angle);
     mat.m[0][0] = c;  mat.m[0][1] = s;
     mat.m[1][0] = -s; mat.m[1][1] = c;
+    return mat;
+}
+
+// ============================================================================
+// ROTATION MATRIX AROUND ARBITRARY AXIS - Quay quanh trục bất kỳ
+// Axis (x,y,z) must be normalized
+// ============================================================================
+inline Matrix4x4 createRotationArbitraryMatrix(float angle, float x, float y, float z) {
+    Matrix4x4 mat;
+    mat.setIdentity();
+    
+    // Normalize vector if needed
+    float len = sqrt(x*x + y*y + z*z);
+    if (len > 0.0001f) {
+        x /= len; y /= len; z /= len;
+    }
+    
+    float c = cos(angle);
+    float s = sin(angle);
+    float t = 1.0f - c;
+    
+    mat.m[0][0] = c + x*x*t;
+    mat.m[0][1] = y*x*t + z*s;
+    mat.m[0][2] = z*x*t - y*s;
+    
+    mat.m[1][0] = x*y*t - z*s;
+    mat.m[1][1] = c + y*y*t;
+    mat.m[1][2] = z*y*t + x*s;
+    
+    mat.m[2][0] = x*z*t + y*s;
+    mat.m[2][1] = y*z*t - x*s;
+    mat.m[2][2] = c + z*z*t;
+    
     return mat;
 }
 
@@ -174,75 +187,6 @@ inline Matrix4x4 multiplyMatrix(const Matrix4x4& A, const Matrix4x4& B) {
         }
     }
     return result;
-}
-
-// ============================================================================
-// TRANSFORM POINT BY MATRIX - Biến đổi điểm: P' = P * M
-// ============================================================================
-inline Vec4 transformPoint(const Vec4& p, const Matrix4x4& M) {
-    Vec4 result;
-    result.x = p.x * M.m[0][0] + p.y * M.m[1][0] + p.z * M.m[2][0] + p.w * M.m[3][0];
-    result.y = p.x * M.m[0][1] + p.y * M.m[1][1] + p.z * M.m[2][1] + p.w * M.m[3][1];
-    result.z = p.x * M.m[0][2] + p.y * M.m[1][2] + p.z * M.m[2][2] + p.w * M.m[3][2];
-    result.w = p.x * M.m[0][3] + p.y * M.m[1][3] + p.z * M.m[2][3] + p.w * M.m[3][3];
-    return result;
-}
-
-// ============================================================================
-// ROTATION AROUND ARBITRARY AXIS - Quay quanh trục bất kỳ
-// T = Tr(-P0) * Rx(φ) * Ry(-θ) * Rz(α) * Ry(θ) * Rx(-φ) * Tr(P0)
-// 
-// P0 = point on axis
-// direction = axis direction vector (will be normalized)
-// α = rotation angle
-// ============================================================================
-inline Matrix4x4 createRotationArbitraryAxis(const Vec4& P0, const Vec4& direction, float alpha) {
-    Vec4 d = direction.normalized();
-    
-    // Calculate angles θ (theta) and φ (phi) from direction vector
-    // d = (dx, dy, dz)
-    // Project onto XZ plane to get theta
-    float dxz = sqrt(d.x * d.x + d.z * d.z);
-    
-    float theta = 0;
-    float phi = 0;
-    
-    if (dxz > 0.0001f) {
-        theta = atan2(d.x, d.z);  // Angle in XZ plane
-    }
-    
-    // Phi is angle from XZ plane
-    phi = atan2(d.y, dxz);
-    
-    // Build composite transformation:
-    // T = Tr(-P0) * Rx(φ) * Ry(-θ) * Rz(α) * Ry(θ) * Rx(-φ) * Tr(P0)
-    
-    Matrix4x4 T1 = createTranslationMatrix(-P0.x, -P0.y, -P0.z);  // Tr(-P0)
-    Matrix4x4 Rx1 = createRotationXMatrix(phi);                     // Rx(φ)
-    Matrix4x4 Ry1 = createRotationYMatrix(-theta);                  // Ry(-θ)
-    Matrix4x4 Rz = createRotationZMatrix(alpha);                    // Rz(α)
-    Matrix4x4 Ry2 = createRotationYMatrix(theta);                   // Ry(θ)
-    Matrix4x4 Rx2 = createRotationXMatrix(-phi);                    // Rx(-φ)
-    Matrix4x4 T2 = createTranslationMatrix(P0.x, P0.y, P0.z);      // Tr(P0)
-    
-    // Combine: T1 * Rx1 * Ry1 * Rz * Ry2 * Rx2 * T2
-    Matrix4x4 result = multiplyMatrix(T1, Rx1);
-    result = multiplyMatrix(result, Ry1);
-    result = multiplyMatrix(result, Rz);
-    result = multiplyMatrix(result, Ry2);
-    result = multiplyMatrix(result, Rx2);
-    result = multiplyMatrix(result, T2);
-    
-    return result;
-}
-
-// Convert matrix to OpenGL format (column-major)
-inline void matrixToOpenGL(const Matrix4x4& mat, float* glMatrix) {
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 4; j++) {
-            glMatrix[j * 4 + i] = mat.m[i][j];
-        }
-    }
 }
 
 #endif // MATRIX_H

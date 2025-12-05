@@ -103,15 +103,6 @@ public:
         return remainingTime <= 0;
     }
     
-    // Get formatted time string
-    std::string getTimeString() const {
-        int minutes = (int)(remainingTime / 60);
-        int seconds = (int)remainingTime % 60;
-        char buffer[32];
-        sprintf(buffer, "%02d:%02d", minutes, seconds);
-        return std::string(buffer);
-    }
-    
     // Set win state
     void setWin() {
         showWinMessage = true;
@@ -124,28 +115,6 @@ public:
         showLoseMessage = true;
         timerActive = false;
         message = "GAME OVER: " + reason + " - Press R to restart";
-    }
-    
-    // ========================================================================
-    // ORTHOGRAPHIC PROJECTION FOR HUD
-    // x' = x0, y' = y0
-    // Maps screen coordinates directly (no perspective distortion)
-    // ========================================================================
-    Vec4 projectHUD(float x, float y) const {
-        // Direct mapping for 2D HUD elements
-        return Vec4(x, y, 0);
-    }
-    
-    // Get timer color (changes when low on time)
-    Color getTimerColor() const {
-        if (remainingTime <= 10) {
-            // Flash red when very low
-            return Color(1.0f, 0.0f, 0.0f);
-        } else if (remainingTime <= 30) {
-            // Orange when low
-            return Color(1.0f, 0.5f, 0.0f);
-        }
-        return timerColor;
     }
 };
 

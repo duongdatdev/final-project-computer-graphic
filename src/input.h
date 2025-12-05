@@ -66,24 +66,8 @@ public:
         keys[key] = false;
     }
     
-    void specialKeyDown(int key) {
-        if (key >= 0 && key < 256) {
-            specialKeys[key] = true;
-        }
-    }
-    
-    void specialKeyUp(int key) {
-        if (key >= 0 && key < 256) {
-            specialKeys[key] = false;
-        }
-    }
-    
     bool isKeyDown(unsigned char key) const {
         return keys[key];
-    }
-    
-    bool isSpecialKeyDown(int key) const {
-        return (key >= 0 && key < 256) ? specialKeys[key] : false;
     }
     
     // ========================================================================
@@ -131,15 +115,6 @@ public:
     
     void prepareForWarp() {
         skipNextMouseMove = true;
-    }
-    
-    void resetMouseDelta() {
-        mouseDeltaX = 0;
-        mouseDeltaY = 0;
-    }
-    
-    void resetFirstMouse() {
-        firstMouseMove = true;
     }
     
     // Check movement keys

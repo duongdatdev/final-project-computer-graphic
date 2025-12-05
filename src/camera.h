@@ -135,66 +135,6 @@ public:
         updateLookAt();
     }
     
-    // ========================================================================
-    // WCS TO OBSERVER TRANSFORMATION
-    // (x0, y0, z0, 1) = (x, y, z, 1) * A * B * C * D
-    // 
-    // Matrix A: Translate to origin (move view reference point to origin)
-    // Matrix B: Rotate around Y axis by -θ
-    // Matrix C: Rotate around X axis by φ
-    // Matrix D: Additional transformations if needed
-    // ========================================================================
-    Matrix4x4 getViewMatrix() const {
-        // Step 1: Translate so camera is at origin
-        // Matrix A: Translation by -camera position
-        Matrix4x4 A = createTranslationMatrix(-position.x, -position.y, -position.z);
-        
-        // Step 2: Rotate around Y by -theta (to align with viewing direction)
-        // Matrix B: Ry(-θ)
-        Matrix4x4 B = createRotationYMatrix(-theta);
-        
-        // Step 3: Rotate around X by phi (elevation)
-        // Matrix C: Rx(φ)
-        Matrix4x4 C = createRotationXMatrix(phi);
-        
-        // Step 4: Identity for D (no additional transformation)
-        Matrix4x4 D;
-        D.setIdentity();
-        
-        // Combine: V = A * B * C * D
-        Matrix4x4 view = multiplyMatrix(A, B);
-        view = multiplyMatrix(view, C);
-        view = multiplyMatrix(view, D);
-        
-        return view;
-    }
-    
-    // ========================================================================
-    // PERSPECTIVE PROJECTION
-    // x' = (D / z0) * x0
-    // y' = (D / z0) * y0
-    // 
-    // D = distance to projection plane
-    // ========================================================================
-    Vec4 perspectiveProject(const Vec4& point) const {
-        Vec4 result;
-        if (fabs(point.z) > 0.0001f) {
-            result.x = (distance / point.z) * point.x;
-            result.y = (distance / point.z) * point.y;
-            result.z = point.z;
-        }
-        return result;
-    }
-    
-    // ========================================================================
-    // ORTHOGRAPHIC PROJECTION (for HUD)
-    // x' = x0
-    // y' = y0
-    // ========================================================================
-    Vec4 orthographicProject(const Vec4& point) const {
-        return Vec4(point.x, point.y, point.z);
-    }
-    
     // Set position with collision check
     void setPosition(float x, float y, float z) {
         position.x = x;

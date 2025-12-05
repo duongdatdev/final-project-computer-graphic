@@ -1,7 +1,7 @@
 /*******************************************************************************
- * THE SHIFTING MAZE - Main Entry Point
+ * SIMPLE MAZE - Main Entry Point
  * 
- * A 3D maze game using C++ and OpenGL (fixed-function pipeline)
+ * A simple 3D maze game using C++ and OpenGL
  * 
  * This file only contains:
  * - OpenGL/GLUT initialization
@@ -11,38 +11,6 @@
  * All game logic is in game.h
  * All drawing functions are in draw.h
  * Configuration is in config.h
- * 
- * ============================================================================
- * COMPUTER GRAPHICS ALGORITHMS IMPLEMENTED:
- * ============================================================================
- * 
- * 1. 3D TRANSFORMATIONS (matrix.h)
- *    - Translation Matrix
- *    - Scale Matrix
- *    - Rotation X/Y/Z Matrices
- *    - Arbitrary Axis Rotation: T = Tr(-P0)·Rx(φ)·Ry(-θ)·Rz(α)·Ry(θ)·Rx(-φ)·Tr(P0)
- *    - Matrix Multiplication: M = M1 · M2 · M3
- * 
- * 2. 3D VIEWING (camera.h)
- *    - WCS to Observer: (x0,y0,z0,1) = (x,y,z,1) · A · B · C · D
- *    - θ (theta) and φ (phi) angles
- *    - Perspective Projection: x' = D/z0 · x0, y' = D/z0 · y0
- *    - Orthographic Projection: x' = x0, y' = y0
- * 
- * 3. CURVES & SURFACES (bezier.h)
- *    - De Casteljau Algorithm
- *    - Bernstein Polynomial: B_k^n(t) = C(n,k) · (1-t)^(n-k) · t^k
- *    - Bézier Curve: P(t) = Σ B_i^n(t) · P_i
- *    - Bézier Surface: P(u,v) = Σ_i Σ_j B_i^m(u) · B_j^n(v) · P_ij
- *    - Parametric Surface: z = sin(x/10) · cos(y/10)
- *    - Sphere: x = r·cos(θ)·sin(φ), y = r·cos(φ), z = r·sin(θ)·sin(φ)
- * 
- * 4. ADVANCED TECHNIQUES (rendering.h, lighting.h)
- *    - Back-face Culling: N · V < 0
- *    - Z-buffer: glEnable(GL_DEPTH_TEST)
- *    - Lambert Shading: I = Ia·Ka + Ip·Kd·max(0, N·L)
- *    - Gouraud Shading: glShadeModel(GL_SMOOTH)
- * 
  ******************************************************************************/
 
 #ifdef _WIN32
@@ -80,12 +48,8 @@ void keyboardUp(unsigned char key, int x, int y) {
     game.handleKeyUp(key);
 }
 
-void specialKey(int key, int x, int y) {
-    game.handleSpecialKeyDown(key);
-}
-
 void mouseMotion(int x, int y) {
-    if (game.state == STATE_PLAYING && !game.menu.isActive()) {
+    if (game.state == STATE_PLAYING) {
         game.handleMouseMove(x, y);
         
         // Warp mouse back to center when it gets too close to edge
@@ -94,10 +58,6 @@ void mouseMotion(int x, int y) {
             glutWarpPointer(game.input.windowCenterX, game.input.windowCenterY);
         }
     }
-}
-
-void mouseButton(int button, int state, int x, int y) {
-    // Could be used for shooting or interaction
 }
 
 void update(int value) {
@@ -139,6 +99,14 @@ void initOpenGL() {
     
     // Enable normalization
     glEnable(GL_NORMALIZE);
+
+    // Enable Fog (CG.6)
+    glEnable(GL_FOG);
+    GLfloat fogColor[] = {0.05f, 0.05f, 0.1f, 1.0f}; // Match clear color
+    glFogfv(GL_FOG_COLOR, fogColor);
+    glFogi(GL_FOG_MODE, GL_EXP);
+    glFogf(GL_FOG_DENSITY, 0.05f);
+    glHint(GL_FOG_HINT, GL_DONT_CARE);
 }
 
 // ============================================================================
@@ -165,9 +133,7 @@ int main(int argc, char** argv) {
     glutReshapeFunc(reshape);
     glutKeyboardFunc(keyboard);
     glutKeyboardUpFunc(keyboardUp);
-    glutSpecialFunc(specialKey);
     glutPassiveMotionFunc(mouseMotion);
-    glutMouseFunc(mouseButton);
     
     // Hide cursor
     glutSetCursor(GLUT_CURSOR_NONE);
