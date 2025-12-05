@@ -85,12 +85,14 @@ void specialKey(int key, int x, int y) {
 }
 
 void mouseMotion(int x, int y) {
-    game.handleMouseMove(x, y);
-    
-    // Warp mouse back to center
     if (game.state == STATE_PLAYING && !game.menu.isActive()) {
-        game.input.mouseWarped = true;
-        glutWarpPointer(game.input.windowCenterX, game.input.windowCenterY);
+        game.handleMouseMove(x, y);
+        
+        // Warp mouse back to center when it gets too close to edge
+        if (game.input.needsWarp(game.windowWidth, game.windowHeight)) {
+            game.input.prepareForWarp();
+            glutWarpPointer(game.input.windowCenterX, game.input.windowCenterY);
+        }
     }
 }
 

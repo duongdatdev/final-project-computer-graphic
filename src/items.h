@@ -192,11 +192,11 @@ public:
     bool checkCollision(const Vec4& playerPos, float playerRadius) const {
         if (!isActive || isCollected) return false;
         
+        // Only check X and Z distance (ignore Y height difference)
         float dx = position.x - playerPos.x;
-        float dy = position.y - playerPos.y;
         float dz = position.z - playerPos.z;
         
-        float distSquared = dx * dx + dy * dy + dz * dz;
+        float distSquared = dx * dx + dz * dz;
         float radiusSum = radius + playerRadius;
         
         return distSquared < (radiusSum * radiusSum);

@@ -182,11 +182,11 @@ public:
     // COLLISION DETECTION
     // ========================================================================
     bool checkCollision(const Vec4& playerPos, float playerRadius) const {
-        // Open doors don't block
-        if (state == DOOR_OPEN) return false;
+        // Open or unlocked doors don't block
+        if (state == DOOR_OPEN || state == DOOR_UNLOCKED) return false;
         
-        // Partially open doors - check based on angle
-        if (openAngle > 45.0f) return false;
+        // Opening doors - check based on angle
+        if (state == DOOR_OPENING && openAngle > 45.0f) return false;
         
         // AABB collision for door
         float halfWidth = width / 2;
@@ -286,15 +286,35 @@ public:
     }
     
     // Try to unlock door at player position
-    bool tryUnlockNearby(const Vec4& playerPos, int keyId) {
+    bool tryUnlockNearby(const Vec4& playerPos, int keysCollected) {
         for (auto& door : doors) {
             if (door.isPlayerNear(playerPos) && door.state == DOOR_LOCKED) {
-                if (door.tryUnlock(keyId)) {
+                if (door.tryUnlock(keysCollected)) {
                     return true;
                 }
             }
         }
         return false;
+    }
+    
+    // Unlock all doors if player has enough keys
+    void unlockAllIfEnoughKeys(int keysCollected, int keysRequired) {
+        if (keysCollected >= keysRequired) {
+            for (auto& door : doors) {
+                if (door.state == DOOR_LOCKED) {
+                    door.state = DOOR_UNLOCKED;
+                }
+            }
+        }
+    }
+    
+    // Auto-open unlocked doors when player is near
+    void autoOpenNearby(const Vec4& playerPos) {
+        for (auto& door : doors) {
+            if (door.state == DOOR_UNLOCKED && door.isPlayerNear(playerPos)) {
+                door.open();
+            }
+        }
     }
     
     // Try to open nearby unlocked door

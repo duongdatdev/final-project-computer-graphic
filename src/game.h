@@ -458,6 +458,12 @@ public:
         // Update doors
         doors.update(deltaTime);
         
+        // Check if all keys collected - unlock all doors
+        doors.unlockAllIfEnoughKeys(items.keysCollected, items.keysRequired);
+        
+        // Auto-open unlocked doors when player is near
+        doors.autoOpenNearby(camera.position);
+        
         // Update particles
         particles.update(deltaTime);
         
@@ -637,14 +643,7 @@ public:
             particles.spawnTrail(auraPos, Color(1.0f, 0.5f, 0.0f));
         }
         
-        // Handle mouse look
-        if (input.mouseDeltaX != 0 || input.mouseDeltaY != 0) {
-            camera.rotate(
-                input.mouseDeltaX * Config::MOUSE_SENSITIVITY,
-                -input.mouseDeltaY * Config::MOUSE_SENSITIVITY
-            );
-            input.resetMouseDelta();
-        }
+        // Mouse look is handled in handleMouseMove() for immediate response
     }
     
     // ========================================================================
@@ -1251,6 +1250,17 @@ public:
     void handleMouseMove(int x, int y) {
         if (state == STATE_PLAYING && !menu.isActive()) {
             input.mouseMove(x, y);
+            
+            // Apply camera rotation immediately
+            if (input.mouseDeltaX != 0 || input.mouseDeltaY != 0) {
+                camera.rotate(
+                    input.mouseDeltaX * Config::MOUSE_SENSITIVITY,
+                    -input.mouseDeltaY * Config::MOUSE_SENSITIVITY
+                );
+            }
+        } else {
+            // Reset first mouse when not playing so camera doesn't jump
+            input.resetFirstMouse();
         }
     }
     

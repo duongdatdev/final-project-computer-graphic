@@ -24,6 +24,8 @@ public:
     int mouseDeltaX, mouseDeltaY;
     bool mouseWarped;
     bool mouseCaptured;
+    bool firstMouseMove;
+    bool skipNextMouseMove;
     
     // Window center for mouse capture
     int windowCenterX, windowCenterY;
@@ -42,6 +44,8 @@ public:
         mouseDeltaX = mouseDeltaY = 0;
         mouseWarped = false;
         mouseCaptured = true;
+        firstMouseMove = true;
+        skipNextMouseMove = false;
         windowCenterX = Config::WINDOW_WIDTH / 2;
         windowCenterY = Config::WINDOW_HEIGHT / 2;
     }
@@ -83,18 +87,34 @@ public:
     }
     
     // ========================================================================
-    // MOUSE HANDLING
+    // MOUSE HANDLING  
     // ========================================================================
     void mouseMove(int x, int y) {
-        if (mouseWarped) {
-            mouseWarped = false;
+        // Skip warp event
+        if (skipNextMouseMove) {
+            skipNextMouseMove = false;
+            mouseX = x;
+            mouseY = y;
             lastMouseX = x;
             lastMouseY = y;
             return;
         }
         
-        mouseDeltaX = x - windowCenterX;
-        mouseDeltaY = y - windowCenterY;
+        // First time initialization
+        if (firstMouseMove) {
+            mouseX = x;
+            mouseY = y;
+            lastMouseX = x;
+            lastMouseY = y;
+            firstMouseMove = false;
+            mouseDeltaX = 0;
+            mouseDeltaY = 0;
+            return;
+        }
+        
+        // Calculate delta from previous position
+        mouseDeltaX = x - mouseX;
+        mouseDeltaY = y - mouseY;
         
         lastMouseX = mouseX;
         lastMouseY = mouseY;
@@ -102,9 +122,24 @@ public:
         mouseY = y;
     }
     
+    // Check if mouse needs to be warped back to center
+    bool needsWarp(int windowWidth, int windowHeight) const {
+        int margin = 100;
+        return (mouseX < margin || mouseX > windowWidth - margin ||
+                mouseY < margin || mouseY > windowHeight - margin);
+    }
+    
+    void prepareForWarp() {
+        skipNextMouseMove = true;
+    }
+    
     void resetMouseDelta() {
         mouseDeltaX = 0;
         mouseDeltaY = 0;
+    }
+    
+    void resetFirstMouse() {
+        firstMouseMove = true;
     }
     
     // Check movement keys
