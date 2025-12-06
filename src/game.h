@@ -53,32 +53,41 @@ struct Monster {
         }
     }
     
-    void draw() {
-        glColor3f(1.0f, 0.0f, 0.0f); // Red monster
+    void draw(const Vec4& viewPos, const Light& light, const Material& material) {
+        // glColor3f(1.0f, 0.0f, 0.0f); // Red monster - handled by material now
         
-        glPushMatrix();
+        // Create red material for monster
+        Material monsterMat = material;
+        monsterMat.diffuse = Color(1.0f, 0.0f, 0.0f);
+        monsterMat.ambient = Color(0.3f, 0.0f, 0.0f);
+
         Matrix4x4 T = createTranslationMatrix(position.x, position.y, position.z);
-        glMultMatrixf(T.ptr());
         
         // Draw body as sphere
-        drawManualSphere(radius, 15, 15);
+        drawManualSphereManual(radius, 15, 15, T, viewPos, light, monsterMat);
         
         // Draw spikes (Cones) - CG.5
+        // Yellow spikes material
+        Material spikeMat = material;
+        spikeMat.diffuse = Color(1.0f, 1.0f, 0.0f);
+        spikeMat.ambient = Color(0.3f, 0.3f, 0.0f);
+        
         for(int i=0; i<8; i++) {
             glPushMatrix();
+            
             float angle = i * 45.0f * 3.14159f / 180.0f;
             Matrix4x4 R = createRotationYMatrix(angle);
             Matrix4x4 T2 = createTranslationMatrix(radius * 0.8f, 0, 0);
             Matrix4x4 R2 = createRotationZMatrix(-90.0f * 3.14159f / 180.0f);
             
-            Matrix4x4 M = R * T2 * R2;
-            glMultMatrixf(M.ptr());
+            Matrix4x4 M = T * R * T2 * R2; // Combine with monster position
+            // We don't need glMultMatrixf here because drawManualConeManual takes M directly
+            // But wait, M is Model matrix. drawManualConeManual expects Model matrix to transform to World.
+            // Yes, M is correct.
             
-            drawManualCone(radius * 0.3f, radius * 0.6f, 10);
+            drawManualConeManual(radius * 0.3f, radius * 0.6f, 10, M, viewPos, light, spikeMat);
             glPopMatrix();
         }
-        
-        glPopMatrix();
     }
 };
 
@@ -99,21 +108,25 @@ struct Key {
         if (rotation > 360.0f) rotation -= 360.0f;
     }
     
-    void draw() {
+    void draw(const Vec4& viewPos, const Light& light, const Material& material) {
         if (collected) return;
         
-        glPushMatrix();
-        
-        // Manual Matrix Transformation for Key
-        // Order: Translate -> Rotate Y -> Rotate X (Tilt)
-        
+        // Gold material
+        Material goldMat = material;
+        goldMat.diffuse = Color(1.0f, 0.8f, 0.0f);
+        goldMat.ambient = Color(0.4f, 0.3f, 0.0f);
+        goldMat.specular = Color(1.0f, 1.0f, 0.5f);
+        goldMat.shininess = 50.0f;
+
+        // Calculate Model Matrix
         Matrix4x4 T = createTranslationMatrix(position.x, position.y + 0.5f, position.z);
         Matrix4x4 Ry = createRotationYMatrix(rotation * 3.14159f / 180.0f);
         Matrix4x4 Rx = createRotationXMatrix(45.0f * 3.14159f / 180.0f); // Tilt 45 degrees
-        
-        // Combine: T * Ry * Rx
         Matrix4x4 M = T * Ry * Rx;
-        glMultMatrixf(M.ptr());
+
+        // 1. Draw Fixed-Function parts (Cylinder, Torus)
+        glPushMatrix();
+        glMultMatrixf(M.ptr()); // View * Model
         
         // Draw key shape using CG.5 primitives
         glColor3f(1.0f, 0.8f, 0.0f); // Gold
@@ -134,11 +147,16 @@ struct Key {
         drawManualTorus(0.05f, 0.15f, 10, 20);
         glPopMatrix();
         
-        // Teeth (Cube)
-        drawCube(0, -0.2f, 0.1f, 0.05f, 0.05f, 0.15f);
-        drawCube(0, -0.1f, 0.1f, 0.05f, 0.05f, 0.1f);
+        glPopMatrix(); // Restore View matrix
+
+        // 2. Draw Manual parts (Teeth)
+        // GL_MODELVIEW is now just View
         
-        glPopMatrix();
+        Matrix4x4 M_tooth1 = M * createTranslationMatrix(0, -0.2f, 0.1f) * createScaleMatrix(0.05f, 0.05f, 0.15f);
+        drawUnitCubeManual(M_tooth1, viewPos, light, goldMat);
+        
+        Matrix4x4 M_tooth2 = M * createTranslationMatrix(0, -0.1f, 0.1f) * createScaleMatrix(0.05f, 0.05f, 0.1f);
+        drawUnitCubeManual(M_tooth2, viewPos, light, goldMat);
     }
 };
 
@@ -415,7 +433,7 @@ public:
         
         // Restore 3D state
         glEnable(GL_DEPTH_TEST);
-        glEnable(GL_LIGHTING);
+        // glEnable(GL_LIGHTING); // Manual lighting used
         
         glMatrixMode(GL_PROJECTION);
         glPopMatrix();
@@ -425,11 +443,11 @@ public:
     
     void drawEntities() {
         for (auto& monster : monsters) {
-            monster.draw();
+            monster.draw(camera.position, playerLight, wallMaterial);
         }
         
         if (!hasKey) {
-            key.draw();
+            key.draw(camera.position, playerLight, exitMaterial); // Use exit material (gold)
         }
         
         // Draw a magic Bezier path above the maze (CG.5)
@@ -511,17 +529,36 @@ public:
     // DRAW FLOOR
     // ========================================================================
     void drawFloor() {
-        glColor3f(floorMaterial.diffuse.r, floorMaterial.diffuse.g, floorMaterial.diffuse.b);
-        
         float size = Maze::SIZE * maze.cellSize;
         float y = 0.0f;
         
+        // Manual lighting for floor
+        Vec4 normal(0, 1, 0);
+        Vec4 p1(maze.offset.x, y, maze.offset.z);
+        Vec4 p2(maze.offset.x + size, y, maze.offset.z);
+        Vec4 p3(maze.offset.x + size, y, maze.offset.z + size);
+        Vec4 p4(maze.offset.x, y, maze.offset.z + size);
+        
+        // Use player light for dynamic lighting
+        Color c1 = calculateLighting(p1, normal, camera.position, playerLight, floorMaterial);
+        Color c2 = calculateLighting(p2, normal, camera.position, playerLight, floorMaterial);
+        Color c3 = calculateLighting(p3, normal, camera.position, playerLight, floorMaterial);
+        Color c4 = calculateLighting(p4, normal, camera.position, playerLight, floorMaterial);
+        
         glBegin(GL_QUADS);
         glNormal3f(0, 1, 0);
-        glVertex3f(maze.offset.x, y, maze.offset.z);
-        glVertex3f(maze.offset.x + size, y, maze.offset.z);
-        glVertex3f(maze.offset.x + size, y, maze.offset.z + size);
-        glVertex3f(maze.offset.x, y, maze.offset.z + size);
+        
+        glColor3f(c1.r, c1.g, c1.b);
+        glVertex3f(p1.x, p1.y, p1.z);
+        
+        glColor3f(c2.r, c2.g, c2.b);
+        glVertex3f(p2.x, p2.y, p2.z);
+        
+        glColor3f(c3.r, c3.g, c3.b);
+        glVertex3f(p3.x, p3.y, p3.z);
+        
+        glColor3f(c4.r, c4.g, c4.b);
+        glVertex3f(p4.x, p4.y, p4.z);
         glEnd();
     }
     
@@ -530,9 +567,7 @@ public:
     // ========================================================================
     void drawMaze() {
         float wallHeight = Config::WALL_HEIGHT;
-        float wallWidth = maze.cellSize * 0.9f;
-        
-        glColor3f(wallMaterial.diffuse.r, wallMaterial.diffuse.g, wallMaterial.diffuse.b);
+        float wallWidth = maze.cellSize; // Full width to avoid gaps
         
         // Static walls
         for (int x = 0; x < Maze::SIZE; x++) {
@@ -541,29 +576,25 @@ public:
                 
                 if (cell == CELL_WALL) {
                     Vec4 pos = maze.gridToWorld(x, z);
-                    drawCube(pos.x, wallHeight / 2, pos.z, wallWidth, wallHeight, wallWidth);
+                    drawCube(pos.x, wallHeight / 2, pos.z, wallWidth, wallHeight, wallWidth,
+                             camera.position, playerLight, wallMaterial);
                 }
                 else if (cell == CELL_EXIT) {
                     Vec4 pos = maze.gridToWorld(x, z);
                     
-                    if (hasKey) {
-                        glColor3f(exitMaterial.diffuse.r, exitMaterial.diffuse.g, exitMaterial.diffuse.b); // Gold/Open
-                    } else {
-                        glColor3f(1.0f, 0.0f, 0.0f); // Red/Locked
+                    Material mat = exitMaterial;
+                    if (!hasKey) {
+                        // Closed - Red
+                        mat.diffuse = Color(1.0f, 0.0f, 0.0f);
                     }
                     
-                    // Exit frame
-                    drawCube(pos.x - wallWidth / 2, wallHeight / 2, pos.z, 0.2f, wallHeight, wallWidth);
-                    drawCube(pos.x + wallWidth / 2, wallHeight / 2, pos.z, 0.2f, wallHeight, wallWidth);
-                    drawCube(pos.x, wallHeight - 0.1f, pos.z, wallWidth, 0.2f, wallWidth);
-                    
-                    glColor3f(wallMaterial.diffuse.r, wallMaterial.diffuse.g, wallMaterial.diffuse.b);
+                    drawCube(pos.x, wallHeight / 2, pos.z, wallWidth, wallHeight, wallWidth,
+                             camera.position, playerLight, mat);
                 }
             }
         }
-        
-        glColor3f(1, 1, 1);
     }
+
     
     // ========================================================================
     // INPUT HANDLING

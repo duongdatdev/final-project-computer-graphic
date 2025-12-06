@@ -29,7 +29,7 @@ enum CellType {
 // ============================================================================
 class Maze {
 public:
-    static const int SIZE = 10;     // 10x10 grid
+    static const int SIZE = 11;     // 10x10 grid
     int grid[SIZE][SIZE];           // Cell types
     
     float cellSize;                 // Size of each cell in world units

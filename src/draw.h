@@ -26,60 +26,68 @@
 // PRIMITIVE DRAWING FUNCTIONS
 // ============================================================================
 
-// Draw a unit cube centered at origin (1x1x1)
-inline void drawUnitCube() {
+// Helper to transform vector by matrix
+inline Vec4 transform(const Matrix4x4& m, const Vec4& v) {
+    float x = m.m[0][0]*v.x + m.m[1][0]*v.y + m.m[2][0]*v.z + m.m[3][0]*v.w;
+    float y = m.m[0][1]*v.x + m.m[1][1]*v.y + m.m[2][1]*v.z + m.m[3][1]*v.w;
+    float z = m.m[0][2]*v.x + m.m[1][2]*v.y + m.m[2][2]*v.z + m.m[3][2]*v.w;
+    float w = m.m[0][3]*v.x + m.m[1][3]*v.y + m.m[2][3]*v.z + m.m[3][3]*v.w;
+    if (w != 0 && w != 1) { x/=w; y/=w; z/=w; }
+    return Vec4(x, y, z);
+}
+
+// Draw a unit cube with manual lighting and back-face culling
+inline void drawUnitCubeManual(const Matrix4x4& M, const Vec4& viewPos, const Light& light, const Material& material) {
+    // Vertices of a unit cube centered at origin
+    Vec4 v[8] = {
+        Vec4(-0.5f, -0.5f, 0.5f), Vec4(0.5f, -0.5f, 0.5f), Vec4(0.5f, 0.5f, 0.5f), Vec4(-0.5f, 0.5f, 0.5f), // Front
+        Vec4(-0.5f, -0.5f, -0.5f), Vec4(0.5f, -0.5f, -0.5f), Vec4(0.5f, 0.5f, -0.5f), Vec4(-0.5f, 0.5f, -0.5f) // Back
+    };
+    
+    // Faces (indices)
+    int faces[6][4] = {
+        {0, 1, 2, 3}, // Front (+Z)
+        {5, 4, 7, 6}, // Back (-Z)
+        {3, 2, 6, 7}, // Top (+Y)
+        {4, 5, 1, 0}, // Bottom (-Y)
+        {1, 5, 6, 2}, // Right (+X)
+        {4, 0, 3, 7}  // Left (-X)
+    };
+
     glBegin(GL_QUADS);
-    
-    // Front face (+Z)
-    glNormal3f(0, 0, 1);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    
-    // Back face (-Z)
-    glNormal3f(0, 0, -1);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    
-    // Top face (+Y)
-    glNormal3f(0, 1, 0);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    
-    // Bottom face (-Y)
-    glNormal3f(0, -1, 0);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    
-    // Right face (+X)
-    glNormal3f(1, 0, 0);
-    glVertex3f(0.5f, -0.5f, 0.5f);
-    glVertex3f(0.5f, -0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, -0.5f);
-    glVertex3f(0.5f, 0.5f, 0.5f);
-    
-    // Left face (-X)
-    glNormal3f(-1, 0, 0);
-    glVertex3f(-0.5f, -0.5f, -0.5f);
-    glVertex3f(-0.5f, -0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, 0.5f);
-    glVertex3f(-0.5f, 0.5f, -0.5f);
-    
+    for (int i = 0; i < 6; i++) {
+        // Transform vertices to world space
+        Vec4 p0 = transform(M, v[faces[i][0]]);
+        Vec4 p1 = transform(M, v[faces[i][1]]);
+        Vec4 p2 = transform(M, v[faces[i][2]]);
+        Vec4 p3 = transform(M, v[faces[i][3]]);
+        
+        // Back-face culling
+        if (!isFaceVisible(p0, p1, p2, viewPos)) continue;
+        
+        // Draw face
+        Vec4 p[4] = {p0, p1, p2, p3};
+        
+        // Transform normal (assuming uniform scale, M is fine for direction)
+        // For correct normal transform with non-uniform scale, we need inverse transpose.
+        // But here we assume uniform or simple scaling.
+        // Actually, let's recalculate normal from world vertices to be safe and "manual"
+        Vec4 normal = (p1 - p0).cross(p2 - p0);
+        normal.normalize();
+
+        for (int j = 0; j < 4; j++) {
+            // Calculate lighting
+            Color c = calculateLighting(p[j], normal, viewPos, light, material);
+            glColor3f(c.r, c.g, c.b);
+            glVertex3f(p[j].x, p[j].y, p[j].z);
+        }
+    }
     glEnd();
 }
 
-// Draw a sphere manually using parametric equation (CG.5)
-// x = r * cos(phi) * cos(theta)
-// y = r * sin(phi)
-// z = r * cos(phi) * sin(theta)
-inline void drawManualSphere(float radius, int slices, int stacks) {
+// Draw a sphere manually with lighting
+inline void drawManualSphereManual(float radius, int slices, int stacks, const Matrix4x4& M, 
+                                 const Vec4& viewPos, const Light& light, const Material& material) {
     const float PI = 3.14159265359f;
     
     for (int i = 0; i < stacks; ++i) {
@@ -90,6 +98,7 @@ inline void drawManualSphere(float radius, int slices, int stacks) {
         for (int j = 0; j <= slices; ++j) {
             float theta = (float)j / slices * 2 * PI;
             
+            // Vertices in local space
             float x1 = radius * cos(phi1) * cos(theta);
             float y1 = radius * sin(phi1);
             float z1 = radius * cos(phi1) * sin(theta);
@@ -98,21 +107,38 @@ inline void drawManualSphere(float radius, int slices, int stacks) {
             float y2 = radius * sin(phi2);
             float z2 = radius * cos(phi2) * sin(theta);
             
-            // Normal vector is same as position vector (normalized) for sphere at origin
-            glNormal3f(x1/radius, y1/radius, z1/radius);
-            glVertex3f(x1, y1, z1);
+            Vec4 v1(x1, y1, z1);
+            Vec4 v2(x2, y2, z2);
             
-            glNormal3f(x2/radius, y2/radius, z2/radius);
-            glVertex3f(x2, y2, z2);
+            // Transform to world space
+            Vec4 w1 = transform(M, v1);
+            Vec4 w2 = transform(M, v2);
+            
+            // Normals (local) - for sphere, normal is same as position (normalized)
+            Vec4 n1 = v1; n1.normalize(); n1.w = 0.0f; // Set w=0 for direction vector
+            Vec4 n2 = v2; n2.normalize(); n2.w = 0.0f;
+            
+            // Transform normals (using M for rotation)
+            // Since w=0, translation in M will be ignored by transform()
+            Vec4 wn1 = transform(M, n1); wn1.normalize();
+            Vec4 wn2 = transform(M, n2); wn2.normalize();
+            
+            // Lighting
+            Color c1 = calculateLighting(w1, wn1, viewPos, light, material);
+            glColor3f(c1.r, c1.g, c1.b);
+            glVertex3f(w1.x, w1.y, w1.z);
+            
+            Color c2 = calculateLighting(w2, wn2, viewPos, light, material);
+            glColor3f(c2.r, c2.g, c2.b);
+            glVertex3f(w2.x, w2.y, w2.z);
         }
         glEnd();
     }
 }
 
 // Draw a cube with transformation using manual matrix multiplication 
-inline void drawCube(float x, float y, float z, float scaleX, float scaleY, float scaleZ, float rotY = 0) {
-    glPushMatrix();
-    
+inline void drawCube(float x, float y, float z, float scaleX, float scaleY, float scaleZ, 
+                     const Vec4& viewPos, const Light& light, const Material& material, float rotY = 0) {
     // Manual Matrix Construction
     // M = T * R * S
     
@@ -126,28 +152,18 @@ inline void drawCube(float x, float y, float z, float scaleX, float scaleY, floa
     Matrix4x4 T = createTranslationMatrix(x, y, z);
     
     // Combine: T * R * S
-    // Note: In OpenGL column-major, this order applies S first, then R, then T to the vertex.
     Matrix4x4 M = T * R * S;
     
-    // Apply to current matrix
-    glMultMatrixf(M.ptr());
-    
-    drawUnitCube();
-    glPopMatrix();
+    drawUnitCubeManual(M, viewPos, light, material);
 }
 
 // Draw a sphere with transformation using manual matrix multiplication (CG.4)
-inline void drawSphere(float x, float y, float z, float radius) {
-    glPushMatrix();
-    
+inline void drawSphere(float x, float y, float z, float radius,
+                       const Vec4& viewPos, const Light& light, const Material& material) {
     // Manual Translation Matrix
     Matrix4x4 T = createTranslationMatrix(x, y, z);
-    glMultMatrixf(T.ptr());
     
-    // Manual Sphere Drawing 
-    drawManualSphere(radius, 20, 20);
-    
-    glPopMatrix();
+    drawManualSphereManual(radius, 20, 20, T, viewPos, light, material);
 }
 
 // ============================================================================
@@ -268,37 +284,68 @@ inline void drawManualCylinder(float radius, float height, int slices) {
     glEnd();
 }
 
-// Draw Cone (Ruled Surface) (CG.5 2.1)
-inline void drawManualCone(float radius, float height, int slices) {
+// Draw Cone manually with lighting
+inline void drawManualConeManual(float radius, float height, int slices, const Matrix4x4& M,
+                               const Vec4& viewPos, const Light& light, const Material& material) {
     const float PI = 3.14159265359f;
     
+    // Cone Side
     glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0, 1, 0); // Approximate normal at tip
-    glVertex3f(0, height, 0); // Tip
+    
+    // Tip
+    Vec4 tipLocal(0, height, 0);
+    Vec4 tipWorld = transform(M, tipLocal);
+    Vec4 tipNormalLocal(0, 1, 0); tipNormalLocal.w = 0;
+    Vec4 tipNormalWorld = transform(M, tipNormalLocal); tipNormalWorld.normalize();
+    
+    Color cTip = calculateLighting(tipWorld, tipNormalWorld, viewPos, light, material);
+    glColor3f(cTip.r, cTip.g, cTip.b);
+    glVertex3f(tipWorld.x, tipWorld.y, tipWorld.z);
     
     for (int i = 0; i <= slices; i++) {
         float theta = (float)i / slices * 2.0f * PI;
         float x = radius * cos(theta);
         float z = radius * sin(theta);
         
-        // Normal calculation for side
-        // Slope vector is (x, -height, z)
-        // Tangent is (-sin, 0, cos)
-        // Normal is cross product... simplified:
-        float ny = radius / height; // Approximate
-        glNormal3f(x/radius, ny, z/radius);
+        Vec4 vLocal(x, 0, z);
+        Vec4 vWorld = transform(M, vLocal);
         
-        glVertex3f(x, 0, z);
+        // Normal calculation
+        float ny = radius / height;
+        Vec4 nLocal(x/radius, ny, z/radius); nLocal.w = 0;
+        Vec4 nWorld = transform(M, nLocal); nWorld.normalize();
+        
+        Color c = calculateLighting(vWorld, nWorld, viewPos, light, material);
+        glColor3f(c.r, c.g, c.b);
+        glVertex3f(vWorld.x, vWorld.y, vWorld.z);
     }
     glEnd();
     
     // Base
     glBegin(GL_TRIANGLE_FAN);
-    glNormal3f(0, -1, 0);
-    glVertex3f(0, 0, 0);
+    
+    // Center of base
+    Vec4 baseCenterLocal(0, 0, 0);
+    Vec4 baseCenterWorld = transform(M, baseCenterLocal);
+    Vec4 baseNormalLocal(0, -1, 0); baseNormalLocal.w = 0;
+    Vec4 baseNormalWorld = transform(M, baseNormalLocal); baseNormalWorld.normalize();
+    
+    Color cBase = calculateLighting(baseCenterWorld, baseNormalWorld, viewPos, light, material);
+    glColor3f(cBase.r, cBase.g, cBase.b);
+    glVertex3f(baseCenterWorld.x, baseCenterWorld.y, baseCenterWorld.z);
+    
     for (int i = 0; i <= slices; i++) {
         float theta = -(float)i / slices * 2.0f * PI;
-        glVertex3f(radius * cos(theta), 0, radius * sin(theta));
+        float x = radius * cos(theta);
+        float z = radius * sin(theta);
+        
+        Vec4 vLocal(x, 0, z);
+        Vec4 vWorld = transform(M, vLocal);
+        
+        // Normal is same as center for flat base
+        Color c = calculateLighting(vWorld, baseNormalWorld, viewPos, light, material);
+        glColor3f(c.r, c.g, c.b);
+        glVertex3f(vWorld.x, vWorld.y, vWorld.z);
     }
     glEnd();
 }

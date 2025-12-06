@@ -103,4 +103,65 @@ public:
     }
 };
 
+// ============================================================================
+// MANUAL LIGHTING CALCULATIONS
+// ============================================================================
+
+// Calculate lighting for a single point using Lambert and Phong models
+inline Color calculateLighting(const Vec4& position, const Vec4& normal, const Vec4& viewPos, 
+                             const Light& light, const Material& material) {
+    if (!light.isEnabled) return Color(0,0,0);
+
+    // Ambient
+    Color ambient = light.ambient * material.ambient;
+
+    // Light direction
+    Vec4 lightDir = light.position - position;
+    float distance = lightDir.length();
+    lightDir.normalize();
+
+    // Diffuse (Lambert)
+    // I = Is * kd * cos(theta)
+    // cos(theta) = N . L
+    // Use normalized vectors
+    Vec4 N = normal;
+    N.normalize();
+    
+    float diff = std::max(0.0f, N.dot(lightDir));
+    Color diffuse = light.diffuse * material.diffuse * diff;
+
+    // Specular (Phong)
+    // R = 2*(N.L)*N - L
+    // I = Is * ks * (R.V)^alpha
+    Vec4 viewDir = viewPos - position;
+    viewDir.normalize();
+    
+    // Reflect direction: R = 2*(N.L)*N - L
+    Vec4 reflectDir = N * (2.0f * N.dot(lightDir)) - lightDir;
+    reflectDir.normalize(); 
+    
+    float spec = std::pow(std::max(0.0f, viewDir.dot(reflectDir)), material.shininess);
+    Color specular = light.specular * material.specular * spec;
+
+    // Attenuation
+    float attenuation = light.getAttenuation(distance);
+
+    return ambient + (diffuse + specular) * attenuation;
+}
+
+// Check if a face is visible (Back-face culling)
+// Returns true if the face is visible from viewPos
+inline bool isFaceVisible(const Vec4& p1, const Vec4& p2, const Vec4& p3, const Vec4& viewPos) {
+    // Calculate face normal
+    Vec4 v1 = p2 - p1;
+    Vec4 v2 = p3 - p1;
+    Vec4 normal = v1.cross(v2);
+    
+    // Vector from face to camera
+    Vec4 viewDir = viewPos - p1;
+    
+    // Dot product > 0 means face is pointing towards camera (angle < 90)
+    return normal.dot(viewDir) > 0;
+}
+
 #endif // LIGHTING_H

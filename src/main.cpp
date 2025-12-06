@@ -81,21 +81,21 @@ void initOpenGL() {
     glDepthFunc(GL_LESS);
     
     // Enable back-face culling
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glFrontFace(GL_CCW);
+    // glDisable(GL_CULL_FACE); // We implemented manual back-face culling in draw.h
+    // glCullFace(GL_BACK);
+    // glFrontFace(GL_CCW);
     
     // Enable lighting
-    glEnable(GL_LIGHTING);
-    glEnable(GL_LIGHT0);
-    glEnable(GL_LIGHT1);
+    // glDisable(GL_LIGHTING); // We implemented manual lighting in lighting.h
+    // glEnable(GL_LIGHT0);
+    // glEnable(GL_LIGHT1);
     
     // Enable color material
-    glEnable(GL_COLOR_MATERIAL);
-    glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+    // glEnable(GL_COLOR_MATERIAL);
+    // glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
     
     // Smooth shading (Gouraud)
-    glShadeModel(GL_SMOOTH);
+    // glShadeModel(GL_SMOOTH);
     
     // Enable normalization
     glEnable(GL_NORMALIZE);
