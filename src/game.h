@@ -12,7 +12,6 @@
 #include "camera.h"
 #include "lighting.h"
 #include "maze.h"
-#include "hud.h"
 #include "input.h"
 #include "draw.h"
 
@@ -56,7 +55,30 @@ struct Monster {
     
     void draw() {
         glColor3f(1.0f, 0.0f, 0.0f); // Red monster
-        drawSphere(position.x, position.y, position.z, radius);
+        
+        glPushMatrix();
+        Matrix4x4 T = createTranslationMatrix(position.x, position.y, position.z);
+        glMultMatrixf(T.ptr());
+        
+        // Draw body as sphere
+        drawManualSphere(radius, 15, 15);
+        
+        // Draw spikes (Cones) - CG.5
+        for(int i=0; i<8; i++) {
+            glPushMatrix();
+            float angle = i * 45.0f * 3.14159f / 180.0f;
+            Matrix4x4 R = createRotationYMatrix(angle);
+            Matrix4x4 T2 = createTranslationMatrix(radius * 0.8f, 0, 0);
+            Matrix4x4 R2 = createRotationZMatrix(-90.0f * 3.14159f / 180.0f);
+            
+            Matrix4x4 M = R * T2 * R2;
+            glMultMatrixf(M.ptr());
+            
+            drawManualCone(radius * 0.3f, radius * 0.6f, 10);
+            glPopMatrix();
+        }
+        
+        glPopMatrix();
     }
 };
 
@@ -81,15 +103,40 @@ struct Key {
         if (collected) return;
         
         glPushMatrix();
-        glTranslatef(position.x, position.y + 0.5f, position.z); // Floating
-        glRotatef(rotation, 0, 1, 0);
-        glRotatef(45, 1, 0, 0); // Tilt
         
-        // Draw key shape (simple combination of cubes)
+        // Manual Matrix Transformation for Key
+        // Order: Translate -> Rotate Y -> Rotate X (Tilt)
+        
+        Matrix4x4 T = createTranslationMatrix(position.x, position.y + 0.5f, position.z);
+        Matrix4x4 Ry = createRotationYMatrix(rotation * 3.14159f / 180.0f);
+        Matrix4x4 Rx = createRotationXMatrix(45.0f * 3.14159f / 180.0f); // Tilt 45 degrees
+        
+        // Combine: T * Ry * Rx
+        Matrix4x4 M = T * Ry * Rx;
+        glMultMatrixf(M.ptr());
+        
+        // Draw key shape using CG.5 primitives
         glColor3f(1.0f, 0.8f, 0.0f); // Gold
-        drawCube(0, 0, 0, 0.1f, 0.4f, 0.1f); // Shaft
-        drawCube(0, 0.2f, 0, 0.3f, 0.1f, 0.1f); // Handle top
-        drawCube(0, -0.15f, 0.1f, 0.1f, 0.1f, 0.2f); // Teeth
+        
+        // Shaft (Cylinder)
+        glPushMatrix();
+        Matrix4x4 T_shaft = createTranslationMatrix(0, 0, 0);
+        glMultMatrixf(T_shaft.ptr());
+        drawManualCylinder(0.05f, 0.6f, 12);
+        glPopMatrix();
+        
+        // Handle (Torus)
+        glPushMatrix();
+        Matrix4x4 T_handle = createTranslationMatrix(0, 0.3f, 0);
+        Matrix4x4 R_handle = createRotationXMatrix(90.0f * 3.14159f / 180.0f);
+        Matrix4x4 M_handle = T_handle * R_handle;
+        glMultMatrixf(M_handle.ptr());
+        drawManualTorus(0.05f, 0.15f, 10, 20);
+        glPopMatrix();
+        
+        // Teeth (Cube)
+        drawCube(0, -0.2f, 0.1f, 0.05f, 0.05f, 0.15f);
+        drawCube(0, -0.1f, 0.1f, 0.05f, 0.05f, 0.1f);
         
         glPopMatrix();
     }
@@ -103,7 +150,6 @@ public:
     // Core components
     Camera camera;
     Maze maze;
-    HUD hud;
     InputManager input;
     
     // Entities
@@ -149,7 +195,6 @@ public:
         initLights();
         initMaze();
         initCamera();
-        initHUD();
         initEntities();
         
         state = STATE_PLAYING;
@@ -230,11 +275,6 @@ public:
         camera.phi = 0;
         camera.updateLookAt();
         camera.moveSpeed = Config::PLAYER_SPEED;
-    }
-    
-    void initHUD() {
-        hud.setScreenSize(windowWidth, windowHeight);
-        hud.reset();
     }
     
     // ========================================================================
@@ -341,7 +381,46 @@ public:
         drawMaze();
         drawEntities();
         
+        drawHUD();
+        
         glutSwapBuffers();
+    }
+    
+    // Draw 2D HUD using CG.3 Algorithms
+    void drawHUD() {
+        // Switch to 2D Orthographic projection
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        gluOrtho2D(0, windowWidth, 0, windowHeight);
+        
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        
+        glDisable(GL_LIGHTING);
+        glDisable(GL_DEPTH_TEST);
+        
+        // Draw Crosshair using Bresenham Line (CG.3)
+        glColor3f(0.0f, 1.0f, 0.0f);
+        int cx = windowWidth / 2;
+        int cy = windowHeight / 2;
+        int size = 10;
+        
+        drawLineBresenham(cx - size, cy, cx + size, cy);
+        drawLineBresenham(cx, cy - size, cx, cy + size);
+        
+        // Draw Circle around crosshair using Midpoint Circle (CG.3)
+        drawCircleMidpoint(cx, cy, size + 5);
+        
+        // Restore 3D state
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_LIGHTING);
+        
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glPopMatrix();
     }
     
     void drawEntities() {
@@ -352,28 +431,51 @@ public:
         if (!hasKey) {
             key.draw();
         }
+        
+        // Draw a magic Bezier path above the maze (CG.5)
+        glColor3f(0.5f, 0.0f, 1.0f);
+        glLineWidth(3.0f);
+        Vec4 p0(0, 5, 0);
+        Vec4 p1(5, 8, 5);
+        Vec4 p2(10, 4, -5);
+        Vec4 p3(15, 6, 0);
+        
+        // Animate control points slightly
+        float t = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+        p1.y += sin(t) * 2.0f;
+        p2.y += cos(t) * 2.0f;
+        
+        drawBezierCurve(p0, p1, p2, p3, 50);
+        glLineWidth(1.0f);
     }
     
     void setupProjection() {
         glMatrixMode(GL_PROJECTION);
         glLoadIdentity();
-        gluPerspective(Config::FOV, (float)windowWidth / windowHeight, 
-                       Config::NEAR_PLANE, Config::FAR_PLANE);
+        
+        // Use custom matrix implementation instead of gluPerspective
+        Matrix4x4 projMat = createPerspectiveMatrix(
+            Config::FOV, 
+            (float)windowWidth / windowHeight, 
+            Config::NEAR_PLANE, 
+            Config::FAR_PLANE
+        );
+        
+        glLoadMatrixf(projMat.ptr());
     }
     
     void setupCamera() {
         glMatrixMode(GL_MODELVIEW);
         glLoadIdentity();
         
-        gluLookAt(
-            camera.position.x, 
-            camera.position.y, 
-            camera.position.z,
-            camera.lookAt.x, 
-            camera.lookAt.y, 
-            camera.lookAt.z,
-            camera.up.x, camera.up.y, camera.up.z
+        // Use custom matrix implementation instead of gluLookAt
+        Matrix4x4 viewMat = createLookAtMatrix(
+            camera.position,
+            camera.lookAt,
+            camera.up
         );
+        
+        glLoadMatrixf(viewMat.ptr());
     }
     
     void setupLights() {
@@ -496,7 +598,6 @@ public:
         windowWidth = w;
         windowHeight = h;
         glViewport(0, 0, w, h);
-        hud.setScreenSize(w, h);
         input.setWindowCenter(w / 2, h / 2);
     }
     
