@@ -31,7 +31,7 @@ namespace Config {
     // ============================================================================
     // MAZE SETTINGS
     // ============================================================================
-    const int MAZE_SIZE = 10;
+    const int MAZE_SIZE = 11;
     const float CELL_SIZE = 2.0f;
     const float WALL_HEIGHT = 2.0f;
     

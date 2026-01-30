@@ -269,6 +269,7 @@ public:
     void initLights() {
         // Main ambient/directional light
         mainLight.position = Vec4(0, 20, 0);
+        // Increase ambient for better visibility
         mainLight.ambient = Color(0.3f, 0.3f, 0.35f);
         mainLight.diffuse = Color(0.5f, 0.5f, 0.45f);
         mainLight.isEnabled = true;
@@ -277,6 +278,8 @@ public:
         playerLight.ambient = Color(0.1f, 0.1f, 0.1f);
         playerLight.diffuse = Color(0.8f, 0.7f, 0.6f);
         playerLight.constantAtt = 1.0f;
+
+        //Decrease attenuation for better range
         playerLight.linearAtt = 0.1f;
         playerLight.quadraticAtt = 0.02f;
         playerLight.isEnabled = true;

@@ -29,7 +29,7 @@ enum CellType {
 // ============================================================================
 class Maze {
 public:
-    static const int SIZE = 11;     // 10x10 grid
+    static const int SIZE = Config::MAZE_SIZE;     // max_size max_size grid
     int grid[SIZE][SIZE];           // Cell types
     
     float cellSize;                 // Size of each cell in world units
@@ -39,7 +39,7 @@ public:
     int exitX, exitZ;               // Exit position
     
     Maze() {
-        cellSize = 2.0f;
+        cellSize = Config::CELL_SIZE;
         offset = Vec4(-SIZE * cellSize / 2, 0, -SIZE * cellSize / 2);
         startX = 1; startZ = 1;
         exitX = SIZE - 2; exitZ = SIZE - 2;
